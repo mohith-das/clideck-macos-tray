@@ -6,6 +6,7 @@ const notifier = require('node-notifier');
 
 module.exports = {
   init(api) {
+    api.log('Starting init');
     let systray = null;
     let trayReady = false;
     let sessions = new Map();
@@ -28,6 +29,7 @@ module.exports = {
     let iconData = '';
     try {
       iconData = readFileSync(join(__dirname, 'tray-icon.png')).toString('base64');
+      api.log('Loaded icon, base64 length: ' + iconData.length);
     } catch (e) {
       api.log('Warning: Could not load tray-icon.png');
     }
@@ -112,12 +114,21 @@ module.exports = {
     }
 
     function initTray() {
+      api.log('Calling initTray');
       if (systray) return;
       
+      const menu = buildMenu();
+      api.log('Building menu, icon length: ' + (menu.icon ? menu.icon.length : 0));
       systray = new SysTray({
-        menu: buildMenu(),
+        menu,
         debug: false,
         copyDir: true
+      });
+
+      systray.onReady(() => {
+        api.log('systray is ready!');
+        trayReady = true;
+        updateTray();
       });
 
       systray.onClick(action => {
@@ -129,18 +140,18 @@ module.exports = {
           exec(cmd);
         } else if (title === "Quit CliDeck") {
           api.log('Quit requested from tray');
-          systray.kill();
+          systray.kill(false);
           setTimeout(() => process.exit(0), 500);
         }
       });
 
-      trayReady = true;
-      updateTray();
+      // trayReady = true; is now in onReady
+      // updateTray(); is now in onReady
     }
 
     function killTray() {
       if (systray) {
-        systray.kill();
+        systray.kill(false);
         systray = null;
         trayReady = false;
       }
