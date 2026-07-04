@@ -14,9 +14,10 @@ module.exports = {
     
     let iconData = '';
     try {
-      iconData = readFileSync(join(__dirname, 'icon.png')).toString('base64');
+      // Use the resized 22x22 icon for the tray
+      iconData = readFileSync(join(__dirname, 'tray-icon.png')).toString('base64');
     } catch (e) {
-      api.log('Warning: Could not load icon.png');
+      api.log('Warning: Could not load tray-icon.png');
     }
 
     function buildMenu() {
