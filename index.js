@@ -102,12 +102,17 @@ module.exports = {
     }
 
     function updateTray() {
-      if (!enabled || !systray || !trayReady) return;
+      if (!enabled) return;
       try {
-        systray.sendAction({
-          type: 'update-menu',
-          menu: buildMenu()
-        });
+        // The underlying Go binary (tray_darwin) has a bug where `update-menu` 
+        // fails to add or remove items dynamically on macOS.
+        // To fix this, we must completely recreate the tray when the menu needs changing.
+        if (systray) {
+          systray.kill(false);
+          systray = null;
+          trayReady = false;
+        }
+        initTray();
       } catch (e) {
         api.log('Failed to update tray: ' + e.message);
       }
@@ -128,7 +133,6 @@ module.exports = {
       systray.onReady(() => {
         api.log('systray is ready!');
         trayReady = true;
-        setTimeout(() => updateTray(), 500); // Give the Go binary a moment
       });
 
       systray.onClick(action => {
@@ -206,6 +210,7 @@ module.exports = {
         // Check for new or updated sessions
         for (const s of allSessions) {
           if (!sessions.has(s.id)) {
+            api.log(`[syncSessions] NEW agent: ${s.id}`);
             sessions.set(s.id, s);
             statuses.set(s.id, s.working || false);
             changed = true;
@@ -214,6 +219,7 @@ module.exports = {
             const existing = sessions.get(s.id);
             const wasWorking = statuses.get(s.id);
             if (existing.name !== s.name || existing.projectId !== s.projectId || wasWorking !== s.working) {
+              api.log(`[syncSessions] CHANGED agent: ${s.id} (name: ${existing.name !== s.name}, proj: ${existing.projectId !== s.projectId}, work: ${wasWorking !== s.working})`);
               sessions.set(s.id, s);
               statuses.set(s.id, s.working || false);
               changed = true;
@@ -234,8 +240,8 @@ module.exports = {
         // Always update tray to ensure the Go binary doesn't miss the initial update
         if (changed) {
           api.log(`[syncSessions] Sessions changed. Count: ${sessions.size}`);
+          updateTray();
         }
-        updateTray();
       } catch (e) {
         api.log(`[syncSessions] Error: ${e.message}`);
       }
@@ -246,13 +252,10 @@ module.exports = {
     syncSessions();
 
     api.onStatusChange((sessionId, working, source) => {
-      const s = api.getSession(sessionId);
-      if (s) sessions.set(sessionId, s);
-      
       const wasWorking = statuses.get(sessionId);
-      statuses.set(sessionId, working);
       
       if (wasWorking === true && working === false) {
+        const s = api.getSession(sessionId) || sessions.get(sessionId);
         const name = s ? (s.name || s.presetId) : sessionId;
         try {
           notifier.notify({
@@ -264,18 +267,11 @@ module.exports = {
           });
         } catch(e) {}
       }
-
-      updateTray();
+      // State and UI update will be handled by the next syncSessions tick
     });
 
     api.onSessionOutput((sessionId, data) => {
-      if (!sessions.has(sessionId)) {
-        const s = api.getSession(sessionId);
-        if (s) {
-          sessions.set(sessionId, s);
-          updateTray();
-        }
-      }
+      // State and UI update will be handled by the next syncSessions tick
     });
 
     api.onSettingsChange((key, value) => {
