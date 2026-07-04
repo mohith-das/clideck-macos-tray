@@ -1,0 +1,10 @@
+{
+  "name": "clideck-plugin-macos-tray",
+  "version": "1.0.0",
+  "description": "System tray integration for CliDeck",
+  "main": "index.js",
+  "dependencies": {
+    "node-notifier": "^10.0.1",
+    "systray": "^1.0.5"
+  }
+}
