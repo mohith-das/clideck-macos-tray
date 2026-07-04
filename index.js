@@ -161,18 +161,48 @@ module.exports = {
       initTray();
     }
 
-    try {
-      const existing = api.getSessions();
-      if (existing) {
-        for (const s of existing) {
-          sessions.set(s.id, s);
-          statuses.set(s.id, s.working || false);
+    function syncSessions() {
+      try {
+        const current = api.getSessions() || [];
+        let changed = false;
+        
+        // Check for new or updated sessions
+        for (const s of current) {
+          if (!sessions.has(s.id)) {
+            sessions.set(s.id, s);
+            statuses.set(s.id, s.working || false);
+            changed = true;
+          } else {
+            // Check if name or project changed
+            const existing = sessions.get(s.id);
+            if (existing.name !== s.name || existing.projectId !== s.projectId) {
+              sessions.set(s.id, s);
+              changed = true;
+            }
+          }
         }
-        updateTray();
+        
+        // Check for removed sessions
+        const currentIds = new Set(current.map(s => s.id));
+        for (const id of sessions.keys()) {
+          if (!currentIds.has(id)) {
+            sessions.delete(id);
+            statuses.delete(id);
+            changed = true;
+          }
+        }
+        
+        if (changed) {
+          updateTray();
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      api.log('Warning: ' + e.message);
     }
+
+    // Run sync periodically to catch newly created/deleted sessions
+    const syncInterval = setInterval(syncSessions, 2000);
+    syncSessions();
 
     api.onStatusChange((sessionId, working, source) => {
       const s = api.getSession(sessionId);
