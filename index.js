@@ -163,27 +163,64 @@ module.exports = {
 
     function syncSessions() {
       try {
-        const current = api.getSessions() || [];
+        let allSessions = [];
+        let allStatuses = new Map();
+
+        // 1. Load active sessions from API
+        const active = api.getSessions() || [];
+        const activeIds = new Set();
+        for (const s of active) {
+          activeIds.add(s.id);
+          allSessions.push(s);
+          allStatuses.set(s.id, s.working || false);
+        }
+
+        // 2. Load resumable/idle sessions from sessions.json
+        try {
+          const sessionsPath = join(require('os').homedir(), '.clideck', 'sessions.json');
+          if (require('fs').existsSync(sessionsPath)) {
+            const resumable = JSON.parse(require('fs').readFileSync(sessionsPath, 'utf8'));
+            if (Array.isArray(resumable)) {
+              for (const rs of resumable) {
+                if (!activeIds.has(rs.id)) {
+                  allSessions.push({
+                    id: rs.id,
+                    name: rs.name,
+                    projectId: rs.projectId,
+                    presetId: rs.presetId || 'shell',
+                    working: false
+                  });
+                  allStatuses.set(rs.id, false);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          api.log(`[syncSessions] Failed to read sessions.json: ${e.message}`);
+        }
+
         let changed = false;
         
         // Check for new or updated sessions
-        for (const s of current) {
+        for (const s of allSessions) {
           if (!sessions.has(s.id)) {
             sessions.set(s.id, s);
             statuses.set(s.id, s.working || false);
             changed = true;
           } else {
-            // Check if name or project changed
+            // Check if name, project, or working state changed
             const existing = sessions.get(s.id);
-            if (existing.name !== s.name || existing.projectId !== s.projectId) {
+            const wasWorking = statuses.get(s.id);
+            if (existing.name !== s.name || existing.projectId !== s.projectId || wasWorking !== s.working) {
               sessions.set(s.id, s);
+              statuses.set(s.id, s.working || false);
               changed = true;
             }
           }
         }
         
         // Check for removed sessions
-        const currentIds = new Set(current.map(s => s.id));
+        const currentIds = new Set(allSessions.map(s => s.id));
         for (const id of sessions.keys()) {
           if (!currentIds.has(id)) {
             sessions.delete(id);
@@ -196,7 +233,7 @@ module.exports = {
           updateTray();
         }
       } catch (e) {
-        // ignore
+        api.log(`[syncSessions] Error: ${e.message}`);
       }
     }
 
