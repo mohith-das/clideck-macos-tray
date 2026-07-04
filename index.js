@@ -128,7 +128,7 @@ module.exports = {
       systray.onReady(() => {
         api.log('systray is ready!');
         trayReady = true;
-        updateTray();
+        setTimeout(() => updateTray(), 500); // Give the Go binary a moment
       });
 
       systray.onClick(action => {
@@ -168,6 +168,8 @@ module.exports = {
 
         // 1. Load active sessions from API
         const active = api.getSessions() || [];
+        require('fs').writeFileSync('/Users/mohithdas/.clideck/plugins/macos-tray/debug_active.json', JSON.stringify(active, null, 2));
+        
         const activeIds = new Set();
         for (const s of active) {
           activeIds.add(s.id);
@@ -228,10 +230,12 @@ module.exports = {
             changed = true;
           }
         }
-        
+
+        // Always update tray to ensure the Go binary doesn't miss the initial update
         if (changed) {
-          updateTray();
+          api.log(`[syncSessions] Sessions changed. Count: ${sessions.size}`);
         }
+        updateTray();
       } catch (e) {
         api.log(`[syncSessions] Error: ${e.message}`);
       }
