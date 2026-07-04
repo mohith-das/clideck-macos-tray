@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "author": "CliDeck Community",
   "description": "Adds a Clideck icon to the system tray/menu bar to view agent status and open the dashboard.",
-  "install": "npm",
   "settings": [
     {
       "key": "enabled",

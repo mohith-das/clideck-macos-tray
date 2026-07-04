@@ -81,7 +81,7 @@ module.exports = {
 
       return {
         icon: iconData,
-        title: "",
+        title: " CliDeck", // Added title so it's visible even if the icon image fails to render
         tooltip: "CliDeck",
         items: items
       };
@@ -122,12 +122,9 @@ module.exports = {
         }
       });
 
-      systray.ready().then(() => {
-        trayReady = true;
-        updateTray();
-      }).catch(e => {
-        api.log('Tray failed to start: ' + e.message);
-      });
+      // systray is ready immediately
+      trayReady = true;
+      updateTray();
     }
 
     function killTray() {
