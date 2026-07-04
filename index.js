@@ -93,7 +93,7 @@ module.exports = {
 
       return {
         icon: iconData,
-        title: "", // Blank string removes the "CliDeck" text from the menu bar
+        title: " ", // Single space instead of empty string so macOS renders it
         tooltip: "CliDeck",
         items: items
       };
