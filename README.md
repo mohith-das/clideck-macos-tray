@@ -61,3 +61,17 @@ You can configure the plugin directly from the CliDeck Plugins panel:
 ## How it works
 
 This plugin uses the standard CliDeck Plugin API. It runs entirely on the backend using `systray` and `node-notifier` to render native UI components without requiring a heavy Electron wrapper. The optional launcher is a compiled native Swift application.
+
+## Known limitations
+
+Due to a hook environment variable inheritance issue in CliDeck, working/idle status updates work reliably only for OpenCode agents. Claude Code and Gemini CLI agents will appear in the tray but always show as idle. [Track this issue →](https://github.com/rustykuntz/clideck/issues/28)
+
+## Contributing
+
+Contributions are welcome! We're especially interested in improving the native Dock launcher — smoother animations, better lifecycle management, or a more polished icon. Some ideas:
+
+- Add a right-click context menu to the Dock icon
+- Show agent count as a Dock badge
+- Improve the squircle icon rendering for different macOS versions
+
+Open a PR or start a discussion in the [issues tab](https://github.com/mohith-das/clideck-macos-tray/issues).
