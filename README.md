@@ -2,7 +2,9 @@
 
 A lightweight, native macOS menu bar integration for [CliDeck](https://clideck.dev/). Keep an eye on your AI coding agents without leaving your current window.
 
-![CliDeck Logo](icon.png)
+<p align="center">
+  <img src="icon.png" alt="CliDeck Logo" width="200">
+</p>
 
 ## Features
 
