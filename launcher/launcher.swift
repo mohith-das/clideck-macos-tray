@@ -3,9 +3,13 @@ import Foundation
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var clideckProcess: Process?
+    var port = "4000"
+    var pollTimer: Timer?
+    var failCount = 0
+    var hasOpenedBrowser = false
 
     func applicationDidFinishLaunching(_ aNotification: Notification) {
-        // Set up the native app menu so "Quit" works naturally
+        // Menu setup
         let mainMenu = NSMenu()
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
@@ -16,26 +20,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
 
-        // 1. Read port from ~/.clideck/settings.json
-        var port = "4000"
+        // 1. Read port
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let settingsPath = home + "/.clideck/settings.json"
         if let data = try? Data(contentsOf: URL(fileURLWithPath: settingsPath)),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let configPort = json["port"] {
-            port = "\(configPort)"
+            self.port = "\(configPort)"
         }
 
-        // 2. Start clideck process as a child
+        // 2. Try starting clideck
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        // Use exec so the node process replaces the shell, allowing clean termination
         task.arguments = ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec clideck"]
         
-        // If clideck is killed externally (e.g. from the Menu Bar tray), quit this wrapper app too!
-        task.terminationHandler = { _ in
+        let pipe = Pipe()
+        task.standardError = pipe
+        task.standardOutput = pipe
+        
+        var outputStr = ""
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.count > 0, let str = String(data: data, encoding: .utf8) {
+                outputStr += str
+            }
+        }
+        
+        task.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
-                NSApplication.shared.terminate(nil)
+                guard let self = self else { return }
+                if process.terminationStatus == 0 {
+                    // It exited cleanly immediately. It means it was already running!
+                    self.openBrowser()
+                    self.startPolling()
+                } else {
+                    // It crashed with an error
+                    let alert = NSAlert()
+                    alert.messageText = "CliDeck Error"
+                    alert.informativeText = "CliDeck failed to start. Another application might be using port \(self.port).\n\nDetails: \(outputStr.prefix(200))"
+                    alert.alertStyle = .critical
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                    NSApplication.shared.terminate(nil)
+                }
             }
         }
         
@@ -46,19 +73,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("Failed to start clideck")
         }
 
-        // 3. Open browser reliably
+        // 3. Wait for it to start up, if it didn't crash
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            if let url = URL(string: "http://localhost:\(port)") {
-                NSWorkspace.shared.open(url)
+            if self.clideckProcess?.isRunning == true {
+                self.openBrowser()
+                self.startPolling()
             }
+        }
+    }
+    
+    func openBrowser() {
+        if hasOpenedBrowser { return }
+        hasOpenedBrowser = true
+        if let url = URL(string: "http://localhost:\(self.port)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    func startPolling() {
+        if pollTimer != nil { return }
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            guard let url = URL(string: "http://localhost:\(self.port)") else { return }
+            
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 1.0
+            
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if error != nil || (response as? HTTPURLResponse)?.statusCode != 200 {
+                    self.failCount += 1
+                    if self.failCount >= 3 {
+                        DispatchQueue.main.async {
+                            NSApplication.shared.terminate(nil)
+                        }
+                    }
+                } else {
+                    self.failCount = 0
+                }
+            }
+            task.resume()
         }
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {
-        // If the user right-clicks the Dock icon and hits Quit, kill clideck!
+        pollTimer?.invalidate()
         clideckProcess?.terminate()
         
-        // Fallback cleanup to ensure no zombie processes are left behind
         let killTask = Process()
         killTask.executableURL = URL(fileURLWithPath: "/bin/sh")
         killTask.arguments = ["-c", "pkill -f 'node.*/opt/homebrew/bin/clideck' || true ; pkill -f 'tray_darwin' || true"]
@@ -70,5 +130,5 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.regular) // Show in Dock and keep running
+app.setActivationPolicy(.regular)
 app.run()
