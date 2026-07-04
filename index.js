@@ -11,10 +11,22 @@ module.exports = {
     let sessions = new Map();
     let statuses = new Map();
     let enabled = api.getSetting('enabled') ?? true;
+    let clideckPort = 4000;
     
+    // Attempt to read the port from CliDeck config
+    try {
+      const cfgPath = join(require('os').homedir(), '.clideck', 'settings.json');
+      const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+      if (cfg.port) clideckPort = cfg.port;
+    } catch(e) {}
+    
+    // Listen for config changes to update the port dynamically
+    api.onConfigChange?.((cfg) => {
+      if (cfg && cfg.port) clideckPort = cfg.port;
+    });
+
     let iconData = '';
     try {
-      // Use the resized 22x22 icon for the tray
       iconData = readFileSync(join(__dirname, 'tray-icon.png')).toString('base64');
     } catch (e) {
       api.log('Warning: Could not load tray-icon.png');
@@ -25,7 +37,7 @@ module.exports = {
       
       items.push({
         title: "Open Dashboard",
-        tooltip: "Open CliDeck in your browser",
+        tooltip: `Open CliDeck (Port ${clideckPort})`,
         checked: false,
         enabled: true
       });
@@ -81,7 +93,7 @@ module.exports = {
 
       return {
         icon: iconData,
-        title: " CliDeck", // Added title so it's visible even if the icon image fails to render
+        title: "", // Blank string removes the "CliDeck" text from the menu bar
         tooltip: "CliDeck",
         items: items
       };
@@ -111,9 +123,9 @@ module.exports = {
       systray.onClick(action => {
         const title = action.item.title;
         if (title === "Open Dashboard" || title.includes("🟢") || title.includes("⚪")) {
-          const cmd = process.platform === 'win32' ? 'start http://localhost:4000' :
-                      process.platform === 'darwin' ? 'open http://localhost:4000' :
-                      'xdg-open http://localhost:4000';
+          const cmd = process.platform === 'win32' ? `start http://localhost:${clideckPort}` :
+                      process.platform === 'darwin' ? `open http://localhost:${clideckPort}` :
+                      `xdg-open http://localhost:${clideckPort}`;
           exec(cmd);
         } else if (title === "Quit CliDeck") {
           api.log('Quit requested from tray');
@@ -122,7 +134,6 @@ module.exports = {
         }
       });
 
-      // systray is ready immediately
       trayReady = true;
       updateTray();
     }
@@ -159,7 +170,6 @@ module.exports = {
       const wasWorking = statuses.get(sessionId);
       statuses.set(sessionId, working);
       
-      // Notify if agent finished (was working, now idle)
       if (wasWorking === true && working === false) {
         const name = s ? (s.name || s.presetId) : sessionId;
         try {
@@ -170,9 +180,7 @@ module.exports = {
             sound: true,
             wait: false
           });
-        } catch(e) {
-          // ignore notification errors
-        }
+        } catch(e) {}
       }
 
       updateTray();
