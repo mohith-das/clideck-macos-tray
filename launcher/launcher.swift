@@ -30,9 +30,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 2. Try starting clideck
+        // GUI apps get a minimal PATH from launchd, so agent CLIs installed via
+        // nvm, homebrew, etc. would be invisible to clideck. Launching through
+        // the user's login shell picks up their real PATH from .zprofile et al.
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && exec clideck"]
+        let userShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        task.executableURL = URL(fileURLWithPath: userShell)
+        task.arguments = ["-l", "-c", "exec clideck"]
         
         let pipe = Pipe()
         task.standardError = pipe
