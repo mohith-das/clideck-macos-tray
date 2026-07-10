@@ -31,12 +31,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 2. Try starting clideck
         // GUI apps get a minimal PATH from launchd, so agent CLIs installed via
-        // nvm, homebrew, etc. would be invisible to clideck. Launching through
-        // the user's login shell picks up their real PATH from .zprofile et al.
+        // nvm, homebrew, etc. would be invisible to clideck. We need the user's
+        // real PATH from .zprofile et al., but running the shell with `-l`
+        // (a real login shell) makes macOS SIGKILL the tray helper's Rosetta-
+        // translated Go binary with EXC_GUARD the moment it starts - reliably
+        // reproducible, unrelated to code signing. Sourcing the same startup
+        // files manually under a *non-login* shell gets the same PATH without
+        // tripping that guard.
         let task = Process()
         let userShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shellName = (userShell as NSString).lastPathComponent
+        let profileSourceCmd = shellName == "zsh"
+            ? "for f in ~/.zshenv ~/.zprofile; do [ -f \"$f\" ] && . \"$f\" >/dev/null 2>&1; done"
+            : "for f in ~/.profile ~/.bash_profile ~/.bash_login; do [ -f \"$f\" ] && . \"$f\" >/dev/null 2>&1; done"
         task.executableURL = URL(fileURLWithPath: userShell)
-        task.arguments = ["-l", "-c", "exec clideck"]
+        task.arguments = ["-c", "\(profileSourceCmd); exec clideck"]
         
         let pipe = Pipe()
         task.standardError = pipe

@@ -1,6 +1,6 @@
 const { join } = require('path');
 const { readFileSync } = require('fs');
-const { exec } = require('child_process');
+const { exec, execSync } = require('child_process');
 const SysTray = require('systray').default;
 const notifier = require('node-notifier');
 
@@ -32,6 +32,27 @@ module.exports = {
       api.log('Loaded icon, base64 length: ' + iconData.length);
     } catch (e) {
       api.log('Warning: Could not load tray-icon.png');
+    }
+
+    // The systray package ships an unsigned x86_64 tray_darwin_release binary.
+    // On Apple Silicon, macOS SIGKILLs unsigned binaries run under Rosetta, so
+    // the tray process dies on launch and the icon never appears (silently,
+    // since the systray lib doesn't surface spawn/exit failures). Ad-hoc
+    // signing the binary - and any copy already cached under ~/.cache -
+    // lets Rosetta run it.
+    if (process.platform === 'darwin') {
+      try {
+        const systrayPkg = require('systray/package.json');
+        const binPath = join(require.resolve('systray'), '..', '..', 'traybin', 'tray_darwin_release');
+        execSync(`codesign --sign - --force "${binPath}"`);
+
+        const cachedPath = join(require('os').homedir(), '.cache', 'node-systray', systrayPkg.version, 'tray_darwin_release');
+        if (require('fs').existsSync(cachedPath)) {
+          execSync(`codesign --sign - --force "${cachedPath}"`);
+        }
+      } catch (e) {
+        api.log('Warning: could not sign tray binary: ' + e.message);
+      }
     }
 
     function buildMenu() {
@@ -95,6 +116,7 @@ module.exports = {
 
       return {
         icon: iconData,
+        isTemplateIcon: process.platform === 'darwin',
         title: " ", // Single space instead of empty string so macOS renders it
         tooltip: "CliDeck",
         items: items
