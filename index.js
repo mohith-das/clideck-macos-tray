@@ -34,24 +34,38 @@ module.exports = {
       api.log('Warning: Could not load tray-icon.png');
     }
 
-    // The systray package ships an unsigned x86_64 tray_darwin_release binary.
-    // On Apple Silicon, macOS SIGKILLs unsigned binaries run under Rosetta, so
-    // the tray process dies on launch and the icon never appears (silently,
-    // since the systray lib doesn't surface spawn/exit failures). Ad-hoc
-    // signing the binary - and any copy already cached under ~/.cache -
-    // lets Rosetta run it.
+    // The systray package ships a tray_darwin_release binary built with a
+    // pre-2019 Go toolchain whose runtime creates semaphores via the raw
+    // mach_msg kernel trap. macOS forbids that trap under Rosetta and kills
+    // the process with EXC_GUARD, so the tray dies at startup - intermittently,
+    // depending on when the Go scheduler first parks a thread - and the icon
+    // never appears (silently, since the systray lib doesn't surface
+    // spawn/exit failures). On Apple Silicon, replace it (and any copy already
+    // cached under ~/.cache) with our native arm64 rebuild from traybin/.
+    // On Intel the trap is allowed, but the binary is unsigned and macOS
+    // refuses to run it, so ad-hoc sign it there.
     if (process.platform === 'darwin') {
       try {
+        const fs = require('fs');
         const systrayPkg = require('systray/package.json');
-        const binPath = join(require.resolve('systray'), '..', '..', 'traybin', 'tray_darwin_release');
-        execSync(`codesign --sign - --force "${binPath}"`);
-
+        const targets = [join(require.resolve('systray'), '..', '..', 'traybin', 'tray_darwin_release')];
         const cachedPath = join(require('os').homedir(), '.cache', 'node-systray', systrayPkg.version, 'tray_darwin_release');
-        if (require('fs').existsSync(cachedPath)) {
-          execSync(`codesign --sign - --force "${cachedPath}"`);
+        if (fs.existsSync(cachedPath)) targets.push(cachedPath);
+
+        const bundled = join(__dirname, 'traybin', 'tray_darwin_arm64');
+        if (process.arch === 'arm64' && fs.existsSync(bundled)) {
+          const src = fs.readFileSync(bundled);
+          for (const t of targets) {
+            if (!fs.existsSync(t) || !fs.readFileSync(t).equals(src)) {
+              fs.writeFileSync(t, src, { mode: 0o755 });
+              api.log(`Installed native arm64 tray binary at ${t}`);
+            }
+          }
+        } else {
+          for (const t of targets) execSync(`codesign --sign - --force "${t}"`);
         }
       } catch (e) {
-        api.log('Warning: could not sign tray binary: ' + e.message);
+        api.log('Warning: could not prepare tray binary: ' + e.message);
       }
     }
 
